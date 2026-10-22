@@ -1,0 +1,14 @@
+Use case: infographic-diagram.
+Create a polished, technically accurate landscape architecture diagram for this HTTP/2 versus HTTP/3 Docker benchmark project. White background, large readable sans-serif labels, restrained navy/blue/teal/orange, neat rounded containers, clear directed arrows and ample spacing. Title: "HTTP/2 & HTTP/3 Benchmark Architecture".
+Two main machine boundaries across upper section.
+Left boundary titled "Local benchmark machine":
+"env.yaml" -> "run_test.py" -> "Case executor (1–4)" -> "h2load Docker container".
+Small configuration label: "Protocols • Payload • Clients • Delay • Packet loss • Iterations".
+Small image-selection annotation attached to h2load: "amd64: tvsjsdock/h2load-http3" and "arm: local versioned build".
+Right boundary titled "Server host (local or remote Linux)". Contains two alternate server containers: "HTTPS server • HTTP/2 • TCP 8443" and "QUIC HTTPS server • HTTP/3 • UDP 9443". The h2load container sends benchmark traffic to these alternatives: blue arrow "HTTP/2 requests" to HTTPS, orange arrow "HTTP/3 requests" to QUIC. Only the chosen server runs for an iteration.
+Local case executor has dashed control arrow to server boundary labeled "Docker control • SSH when remote".
+A separate local "Background resource sampler • 500 ms" box has dashed read arrow towards server containers labeled "Server CPU counters, memory, network I/O". Show sampler parallel to h2load. It measures server containers only.
+Lower local results pipeline spanning the page: h2load arrow to "Per-iteration files" box containing "summary.txt • requests.log"; sampler arrow to same box containing "resource.log (JSON)". Storage label beneath: "test_results/<timestamp>/case_N/<parameters>/<iteration>/".
+Then directed pipeline arrows: "Per-iteration files" -> "pre_analysis • analysis.csv" -> "Trimmed means + p95/p99" -> "trimmed_mean.csv" -> "Summary tables & PNG graphs".
+At bottom small note: "Each test repeats for the configured iterations. Reports are saved per case."
+Do not show real credentials, addresses, fabricated measurements, or decorative technology logos. Keep labels verbatim, arrows unambiguous, no overlapping labels. Architectural illustration, not code screenshot.

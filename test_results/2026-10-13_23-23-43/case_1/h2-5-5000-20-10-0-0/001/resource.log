@@ -1,0 +1,38 @@
+[
+  {
+    "type": "baseline",
+    "timestamp": "2026-10-13T23:23:50.319123+03:00",
+    "container": "test-server-be46760fe804",
+    "server_host": "local",
+    "target_interval_ms": 500.0,
+    "elapsed_seconds": 0.0,
+    "interval_seconds": 0.0,
+    "read_duration_seconds": 0.052782708999999706,
+    "cpu_counter_ns": 70081000,
+    "memory_bytes": 43577344,
+    "network_rx_bytes": 418,
+    "network_tx_bytes": 138,
+    "cpu_delta_ns": 0,
+    "cpu_consumed_ns": 0,
+    "cpu_consumed_seconds": 0.0,
+    "cpu_percent": null
+  },
+  {
+    "type": "final",
+    "timestamp": "2026-10-13T23:23:50.842222+03:00",
+    "container": "test-server-be46760fe804",
+    "server_host": "local",
+    "target_interval_ms": 500.0,
+    "elapsed_seconds": 0.5208945414999988,
+    "interval_seconds": 0.5208945414999988,
+    "read_duration_seconds": 0.05718070799999975,
+    "cpu_counter_ns": 354364000,
+    "memory_bytes": 71319552,
+    "network_rx_bytes": 356568,
+    "network_tx_bytes": 27149345,
+    "cpu_delta_ns": 284283000,
+    "cpu_consumed_ns": 284283000,
+    "cpu_consumed_seconds": 0.284283,
+    "cpu_percent": 54.575922255081
+  }
+]

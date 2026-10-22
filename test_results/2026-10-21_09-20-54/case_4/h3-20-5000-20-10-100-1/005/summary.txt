@@ -1,0 +1,27 @@
+--npn-list: deprecated.  Use --alpn-list instead.
+starting benchmark...
+spawning thread #0: 20 total client(s). 5000 total requests
+TLS Protocol: TLSv1.3
+Cipher: TLS_AES_128_GCM_SHA256
+Application protocol: h3
+progress: 10% done
+progress: 20% done
+progress: 30% done
+progress: 40% done
+progress: 50% done
+progress: 60% done
+progress: 70% done
+progress: 80% done
+progress: 90% done
+progress: 100% done
+
+finished in 34.37s, 145.47 req/s, 2.85MB/s
+requests: 5000 total, 5000 started, 5000 done, 5000 succeeded, 0 failed, 0 errored, 0 timeout
+status codes: 5000 2xx, 0 3xx, 0 4xx, 0 5xx
+traffic: 97.87MB (102620200) total, 136.72KB (140000) headers (space savings 60.56%), 97.70MB (102445000) data
+UDP datagram: 29979 sent, 75867 received
+                     min         max         mean         sd        +/- sd
+time for request:   203.94ms       3.05s    894.10ms    425.90ms    66.24%
+time for connect:   315.92ms    924.13ms    349.39ms    135.44ms    95.00%
+time to 1st byte:   525.06ms       1.13s    560.88ms    133.20ms    95.00%
+req/s           :       7.28       20.84       11.76        3.76    80.00%

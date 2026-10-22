@@ -1,0 +1,15 @@
+Create a precise, professional code-design flowchart image for a Python benchmark project. Portrait or spacious landscape layout, high-resolution white background, navy typography, blue for orchestration, teal for execution, purple for analysis, amber for reports. Large readable exact filenames. Title "Benchmark Code Design & Execution Order". This is a code module and call-order diagram, no machine architecture or Docker network diagram.
+Show main ordered pipeline with numbered stages and unambiguous arrows:
+1 "run_test.py • main()" (orchestrator heading)
+2 "pre_init_test.py" subtitle "Create timestamp folder and logs.txt"
+3 "environment.py • load_environment()" subtitle "Read env.yaml; validate enabled cases" and a small side note "All disabled → exit"
+4 "server_host.py • server_connection(config)" followed by "pre_build_containers.py" subtitle "Prepare selected h2load and server images"
+5 "Run enabled cases sequentially" containing a single clear row/column ordered "execute_case_1.py → execute_case_2.py → execute_case_3.py → execute_case_4.py". Subtitle "Skip disabled cases. Case 1: payload; Case 2: clients; Case 3: delay; Case 4: delay × packet loss." These are sequential, never parallel.
+An inset attached to stage5 labeled "Shared execution path" depicts "execute_case_N.py → case_runner.py • run_case() → executor.py • execute() → iteration loop". Subtitle case_runner "All configured input combinations + progress / ETA". Inside iteration loop: "Start server" then two side-by-side genuinely parallel boxes "h2load → summary.txt + requests.log" and "ResourceSampler (500 ms) → resource.log", then "Stop server / next iteration". Note "Zero started/done/succeeded: retry, max 3 attempts; wait 500 ms".
+6 "Close server connection" after ALL enabled cases complete.
+7 "Analyze each enabled case (1 → 4)" enclosing sequential filename boxes "pre_analysis.py → execute_trimmed_mean.py → 95_99_percentile.py". Subtitles respectively "analysis.csv", "Trim by request-time mean → trimmed_mean.csv", "p95/p99; trim by p99 → update trimmed_mean.csv". Note "Finish analysis for all enabled cases before reports".
+8 "Reports for enabled cases (1 → 4)" containing two readable groups:
+"Cases 1–3: summary table → resource graphs → h2load graphs → percentile graphs"
+"Case 4: summary table → all-delay summary → resource summary → all-delay resource summary → h2load bar graphs"
+Bottom footer "Outputs: test_results/<timestamp>/case_N/ • Raw files: <parameters>/<iteration>/"
+Keep stage8 wording condensed above, do not invent scripts for case4 percentile or resource graphs. Distinguish top-level ordered steps from shared execution inset. All filenames accurate. Avoid crowded fine print, decorative icons, illegible text, overlapping arrows.
