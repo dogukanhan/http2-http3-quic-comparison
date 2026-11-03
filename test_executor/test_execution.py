@@ -71,6 +71,7 @@ class ExecutorTests(unittest.TestCase):
         command = self.popen.call_args.args[0]
         version = executor.read_version(executor.ROOT_DIR / "h2load-native")
         self.assertIn(f"h2load-http3-arm64:{version}", command)
+        self.assertEqual(command[command.index(f"h2load-http3-arm64:{version}") + 1], "h2load")
         for argument in ("-n100", "-c2", "-m3", "NETEM_DELAY=5ms", "NETEM_LOSS=1%"):
             self.assertIn(argument, command)
         self.assertEqual(command[-1], "https://host.docker.internal:8443/payloads/1kb")
@@ -85,11 +86,20 @@ class ExecutorTests(unittest.TestCase):
         with patch("test_executor.server_host.load_environment", return_value=Environment(archtype="amd64")), \
                 patch("test_executor.pre_build_containers.read_version", side_effect=AssertionError("ARM version must not be read")), \
                 pre_init_test(self.results):
-            executor.execute(**{**self.args, "iterations": 1})
-        command = self.popen.call_args.args[0]
-        self.assertIn("tvsjsdock/h2load-http3:latest", command)
-        self.assertEqual(command[command.index("--platform") + 1], "linux/amd64")
-        self.assertFalse(any("h2load-http3-arm64" in part for part in command))
+            for protocol in ("h2", "h3"):
+                with self.subTest(protocol=protocol):
+                    executor.execute(**{**self.args, "protocol": protocol, "iterations": 1})
+                    command = self.popen.call_args.args[0]
+                    image_index = command.index("tvsjsdock/h2load-http3:latest")
+                    self.assertEqual(command[command.index("--platform") + 1], "linux/amd64")
+                    # Docker prepends the image's h2load entrypoint. Only options
+                    # and the target URI belong after this image name.
+                    self.assertEqual(command[image_index + 1:], [
+                        "-n100", "-c2", "-m3", "--npn-list", protocol,
+                        "--log-file=/test-results/requests.log",
+                        f"https://host.docker.internal:{8443 if protocol == 'h2' else 9443}/payloads/1kb",
+                    ])
+                    self.assertFalse(any("h2load-http3-arm64" in part for part in command))
 
     def test_standalone_creates_run_and_h3_uses_udp(self):
         initializer = importlib.import_module("test_executor.pre_init_test")

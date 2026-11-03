@@ -32,13 +32,77 @@ case_4_enabled: false
 Set `archtype` to match the local machine running h2load:
 
 - `amd64`: use `tvsjsdock/h2load-http3:latest`. Preparation pulls the image
-  for `linux/amd64` only if it is missing locally; no h2load build is needed.
+  for `linux/amd64` only if it is missing locally. When h2load bandwidth is
+  configured, use the versioned `h2load-http3-amd64-netem` image instead:
+  a small layer on that image installs iproute2 without rebuilding h2load.
 - `arm`: use `h2load-http3-arm64:<version>`, where `<version>` comes from
   `h2load-native/version.txt`. Preparation builds it for `linux/arm64` only
   if that version is missing locally.
 
 The default is `arm`. This setting applies to the local load generator;
 remote server images are built using the Linux server's native architecture.
+
+## Container limits
+
+Set `container_limits` in the root `env.yaml`. These settings apply to every
+case and iteration. Omitted values and `null` leave that resource unlimited.
+The checked-in template and local configuration start with all limits disabled.
+For example (choose values suitable for your experiment):
+
+```yaml
+container_limits:
+  h2load:
+    memory: "1g"
+    cpus: 2.0
+    bandwidth_mbps: 100
+  http2:
+    memory: "512m"
+    cpus: 1.0
+    bandwidth_mbps: 100
+  http3:
+    memory: "512m"
+    cpus: 1.0
+    bandwidth_mbps: 100
+```
+
+- `memory`: Docker size string (`512m` = 512 MiB, `1g` = 1 GiB), at least
+  6 MiB. Sets `--memory` and the same `--memory-swap` value to disable swap
+  for that container. Exceeding the limit can cause an out-of-memory kill.
+- `cpus`: CPU quota in cores, at least `0.01`. `0.5` allows half of one core's
+  CPU time; `2.0` allows two cores' worth. This is not CPU affinity/pinning.
+- `bandwidth_mbps`: positive megabits per second (decimal), e.g. `12.5`.
+  Applies to all outgoing traffic on the container's `eth0`, shared across
+  connections. h2load controls client-to-server traffic (including ACKs);
+  http2/http3 control server-to-client traffic (including responses).
+  These are separate directional limits, not one combined bidirectional cap.
+
+The existing delay and packet loss are combined with bandwidth in one command:
+
+```sh
+tc qdisc replace dev eth0 root netem delay 10ms loss 1% rate 100mbit
+```
+
+Without a bandwidth limit the `rate` argument is omitted. Netem emulates a link
+rate; timer granularity, queues, and protocol overhead affect observed application
+throughput. Queue overflow can also drop packets even with configured loss 0%.
+See the [netem manual](https://man7.org/linux/man-pages/man8/tc-netem.8.html)
+and [Docker resource limits](https://docs.docker.com/engine/containers/resource_constraints/).
+
+Limits follow each container's execution host: h2load stays local, while the
+servers follow `remote`. The selected limits are printed to the run's logs.
+Versioned server/ARM images rebuild automatically when their new version is
+missing. For AMD64 h2load with bandwidth enabled, the runner mounts the local
+`h2load-native/docker-entrypoint.sh` read-only and runs it with `/bin/sh` instead
+of the image's entrypoint. It applies delay/loss/rate, then executes h2load once.
+The original registry image lacks `tc`, so preparation automatically builds
+`h2load-http3-amd64-netem:<version>` from `h2load-amd64/Dockerfile` when needed.
+Its version is stored in `h2load-amd64/version.txt`; an existing version skips
+the build. This adds iproute2 while preserving the original h2load binary.
+Missing `tc` or failed network configuration stops execution rather than
+running an unshaped test. Use the AMD64 binary on an AMD64 machine; its execution
+under ARM emulation is not guaranteed.
+
+## Connection setup
 
 Use the actual server address. Keep passwords quoted; an empty password uses
 your SSH agent or local SSH keys instead. `env.yaml` is ignored by Git;
@@ -372,12 +436,10 @@ Time To 1st Byte(Mean), Req/s (Mean), and H2 Load Req/s.
 Only `case_1` rows with payloads **1, 5, 20, 100, and 256 KB** are included,
 sorted by payload and then protocol. Summary measurements use three decimal
 places; payload sizes remain integers. Other analysis CSVs retain their precision.
-Timing cells display `mean ms ± std ms`; Req/s displays `mean ± std` using the
-corresponding h2load SD column. These SD values are the retained iterations'
-averaged h2load standard deviations, not a newly calculated deviation across
-iteration means. If a mean is missing, the cell stays blank; if only its SD is
-missing, only the mean is shown. H2 Load Req/s uses the overall rate from
-h2load's finished summary (`h2load_req_per_sec`) and has no SD column.
+Timing cells display `mean ms`; rates display only their mean, without standard
+deviation. Standard deviation columns remain in `analysis.csv`, `average.csv`,
+and `trimmed_mean.csv`. Missing means leave blank cells. H2 Load Req/s uses the
+overall rate from h2load's finished summary (`h2load_req_per_sec`).
 Req/s (Mean) uses the mean from
 h2load's per-client req/s statistics row (`h2load_req_per_sec_mean`). Missing
 source values remain blank, and unavailable payload/protocol combinations
@@ -427,16 +489,14 @@ four panels in a 2×2 layout. Every panel uses payload (KB) on the x-axis and
 separate h2 and h3 lines. The means come directly from `trimmed_mean.csv`:
 
 - Requests per second: `h2load_req_per_sec_mean` (per-client mean from h2load's
-  statistics table, paired with `h2load_req_per_sec_sd`).
+  statistics table).
 - Time to first byte: `h2load_time_to_1st_byte_mean_ms`.
 - Connection time: `h2load_time_for_connect_mean_ms`.
 - Time for request: `h2load_time_for_request_mean_ms`.
 
-The timing panels show milliseconds and use their matching `_sd_ms` columns.
-Shaded areas show mean ± SD, with the lower bounds clipped at zero. These
-are the retained iterations' averaged h2load SDs, not newly calculated
-variation between iteration means or confidence intervals. Missing means
-leave gaps; missing SDs omit the shading while keeping available means.
+The timing panels show milliseconds. Graphs display means only, without SD
+bands or error bars. Missing means leave gaps. The same presentation applies
+to the four-series trimmed-versus-average graphs; source SD columns are preserved.
 
 The combined image is saved at
 `case_1/h2load_graphs/n<requests>-c<clients>-m<streams>-delay<ms>-loss<percent>/h2load_summary.png`
@@ -475,8 +535,8 @@ When case 2 is enabled, `run_test.py` calls `h2load_graph_creator.py` after
 its CSV analysis. It reads `case_2/trimmed_mean.csv` and creates a four-panel
 PNG with **number of clients** on the x-axis and separate h2 and h3 lines:
 requests per second (per-client mean), time to first byte, connection time,
-and time for request. Timing values are milliseconds. Shading shows mean ±
-averaged h2load SD, as in case 1. Client counts are sorted numerically.
+and time for request. Timing values are milliseconds. Only mean lines are
+shown, as in case 1. Client counts are sorted numerically.
 
 Different payloads and other fixed test settings get separate images at
 `case_2/h2load_graphs/n<requests>-p<payload>-m<streams>-delay<ms>-loss<percent>/h2load_summary.png`.
@@ -532,7 +592,7 @@ writes `case_2/case_2_summary_table.csv` using semicolons.
 The first column is `client_size` instead of `Payload`. Only client counts
 **2, 10, 25, 50, and 100** are included for h2 and h3, sorted by client count
 and then protocol. Missing combinations are omitted. The remaining columns
-and formatting match case 1: timing means and SDs use `ms` and `±`, rates
+and formatting match case 1: timing means use `ms`, rates
 remain req/s, and measurements use three decimal places. Each matching test
 remains a separate row. Source CSVs retain their original precision.
 
@@ -561,7 +621,7 @@ They read `case_3/trimmed_mean.csv`, plot **delay in milliseconds** on the x-axi
 and show separate h2 and h3 lines:
 
 - `case_3_h2load_graph_creator.py`: one four-panel PNG for per-client req/s,
-  time to first byte, connection time, and request time, with mean ± SD shading.
+  time to first byte, connection time, and request time, showing means only.
 - `case_3_percentile_graph_creator.py`: one two-panel PNG for p95 and p99 latency.
 - `case_3_resource_graph_creator.py`: CPU usage (%), CPU counter (ms), memory
   (MiB), and total received + transmitted network usage (MiB), in PNG and SVG.
@@ -585,8 +645,7 @@ python3 -m test_executor.case_3_resource_graph_creator test_results/<date-time>/
 `case_3_summary_table.py` reads `case_3/trimmed_mean.csv` and writes
 `case_3/case_3_summary_table.csv`. It replaces `Payload` with `delay` and
 selects **0, 50, and 100 ms** for both h2 and h3, sorted by delay and protocol.
-The table keeps case 1's other columns, three decimal places, timing `ms`,
-and `±` standard deviations. It runs automatically when case 3 is enabled.
+The table keeps case 1's other columns, three decimal places, and timing `ms`. It runs automatically when case 3 is enabled.
 Missing combinations are omitted. Add `0` to `case_3.delays` in YAML to include
 a zero-delay test; its summary row appears only when that data exists.
 
@@ -618,7 +677,7 @@ Only **delay = 10 ms** records for **h2 and h3** are included. The first column
 is `packet_loss` (percent) instead of `delay`; the case 4 sweep supplies
 0, 1, and 2% loss. Rows are sorted by packet loss, then protocol. Missing
 combinations are omitted. All other columns and formatting match case 3:
-three decimal places, timing values in `ms`, and `±` standard deviations.
+three decimal places and timing values in `ms`, without standard deviations.
 The source CSV remains unchanged.
 
 ```bash
@@ -656,7 +715,7 @@ h2load columns as `case_4_summary_table.py`.
 
 All available delays for h2 and h3 are included, sorted by delay, packet loss,
 and protocol. The CSV uses semicolons and preserves the summary formatting:
-three decimal places, timing `ms`, and `±` standard deviations. It runs
+three decimal places and timing `ms`, without standard deviations. It runs
 automatically when case 4 is enabled. The existing 10 ms summary remains
 separate, and no missing combinations are invented.
 
@@ -705,7 +764,7 @@ Every case now also produces `h2load_graphs/<settings>/h2load_summary_comparison
 Each of its four panels compares **h2 trimmed**, **h3 trimmed**, **h2 average**,
 and **h3 average**, using `trimmed_mean.csv` and `average.csv` respectively.
 The original `h2load_summary.png` remains separate. Cases 1–3 retain their
-payload/client/delay axes and line graphs (with SD shading); case 4 retains
+payload/client/delay axes and mean-only line graphs; case 4 retains
 delay/packet-loss groups with four bars per group. Metrics and units match
 the original graphs, including per-client mean req/s.
 

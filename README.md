@@ -1,1 +1,1 @@
-# http2-http3-quic-comparison
+python run_test.py

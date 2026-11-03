@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from test_executor.case_2_summary_table import COLUMNS, STANDARD_DEVIATIONS, case_2_summary_table
+from test_executor.case_2_summary_table import COLUMNS, case_2_summary_table
 
 
 class Case2SummaryTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class Case2SummaryTests(unittest.TestCase):
 
     def row(self, clients, protocol="h2", case="case_2"):
         row = {field: "1.234567" for field in COLUMNS.values()}
-        row.update({field: "0.123456" for field in STANDARD_DEVIATIONS.values()})
+        row.update({field: "0.123456" for field in (source.replace("_mean", "_sd") for source in COLUMNS.values() if "_mean" in source)})
         row.update(test_id=f"run/{case}/{protocol}-20-5000-{clients}-10-0-0",
                    clients=str(clients), protocol=protocol, payload="20")
         return row
@@ -51,8 +51,8 @@ class Case2SummaryTests(unittest.TestCase):
         self.assertEqual(list(results[0]), list(COLUMNS))
         self.assertNotIn("Payload", results[0])
         for column in ("Time For Request(Mean)", "Time For Connect(Mean)", "Time To 1st Byte(Mean)"):
-            self.assertEqual(results[0][column], "1.235 ms ± 0.123 ms")
-        self.assertEqual(results[0]["Req/s (Mean)"], "1.235 ± 0.123")
+            self.assertEqual(results[0][column], "1.235 ms")
+        self.assertEqual(results[0]["Req/s (Mean)"], "1.235")
         self.assertEqual(results[0]["H2 Load Req/s"], "1.235")
         self.assertEqual(self.source.read_bytes(), original)
         self.assertEqual(self.read(case_2_summary_table(self.case_dir)), results)
@@ -61,7 +61,9 @@ class Case2SummaryTests(unittest.TestCase):
     def test_missing_combinations_and_measurements_are_not_invented(self):
         row = self.row(10, "h3")
         row["h2load_time_for_request_mean_ms"] = ""
-        row["h2load_time_for_connect_sd_ms"] = ""
+        for field in list(row):
+            if "_sd" in field:
+                del row[field]
         self.write([row])
         results = self.read(case_2_summary_table(self.case_dir))
         self.assertEqual(len(results), 1)

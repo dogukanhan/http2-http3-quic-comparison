@@ -12,7 +12,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from test_executor.result_paths import case_directory
-from test_executor.case_1_summary_table import COLUMNS as CASE_1_COLUMNS, STANDARD_DEVIATIONS, format_value
+from test_executor.case_1_summary_table import COLUMNS as CASE_1_COLUMNS, format_value
 
 
 DELAYS = (0, 50, 100)
@@ -24,8 +24,7 @@ def case_3_summary_table(run_dir: Path | None = None) -> Path:
     run_dir = case_directory(run_dir, "case_3")
     with (run_dir / "trimmed_mean.csv").open(encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file, delimiter=";")
-        required = {"test_id", *COLUMNS.values(),
-                    *STANDARD_DEVIATIONS.values()}
+        required = {"test_id", *COLUMNS.values()}
         missing = required - set(reader.fieldnames or [])
         if missing:
             raise ValueError(f"trimmed_mean.csv is missing columns: {', '.join(sorted(missing))}")

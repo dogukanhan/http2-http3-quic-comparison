@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from test_executor.environment import Environment, load_environment
+from test_executor.environment import ContainerLimits, ContainerSettings, Environment, load_environment
 from test_executor import pre_build_containers as images
 from test_executor.server_host import get_active_environment, server_connection
 
@@ -52,6 +52,29 @@ class ImageArchitectureTests(unittest.TestCase):
             images.prepare_images(self.server, Environment(archtype="amd64"))
         build.assert_not_called()
         self.server.build_image.assert_not_called()
+
+    def test_amd64_bandwidth_builds_local_tc_layer_and_reuses_version(self):
+        folder = self.root / "h2load-amd64"
+        folder.mkdir()
+        (folder / "Dockerfile").write_text("FROM tvsjsdock/h2load-http3:latest\n")
+        (folder / "version.txt").write_text("1.2.3")
+        config = Environment(archtype="amd64", container_limits=ContainerSettings(
+            h2load=ContainerLimits(bandwidth_mbps=10)))
+        image = "h2load-http3-amd64-netem:1.2.3"
+        self.assertEqual(images.selected_h2load_image(config), image)
+        for cached in (False, True):
+            self.server.reset_mock()
+            with self.subTest(cached=cached), patch.object(images, "image_exists", return_value=cached), \
+                    patch.object(images, "run_build") as build:
+                images.prepare_images(self.server, config)
+            if cached:
+                build.assert_not_called()
+                self.server.build_image.assert_not_called()
+            else:
+                build.assert_called_once_with([
+                    "docker", "buildx", "build", "--platform", "linux/amd64", "--load",
+                    "--progress=plain", "-f", str(folder / "Dockerfile"), "-t", image, str(folder)])
+                self.assertEqual(self.server.build_image.call_count, 2)
 
     def test_arm_builds_missing_version_and_reuses_existing_version(self):
         directory = self.root / "h2load-native"

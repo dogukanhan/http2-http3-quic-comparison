@@ -3,12 +3,67 @@
 from __future__ import annotations
 
 import ipaddress
+import math
+import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 from pathlib import Path
 
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "env.yaml"
 CASE_NAMES = ("case_1", "case_2", "case_3", "case_4")
+
+
+@dataclass(frozen=True)
+class ContainerLimits:
+    memory: str | None = None
+    cpus: float | None = None
+    bandwidth_mbps: float | None = None
+
+    def docker_args(self) -> list[str]:
+        args = []
+        if self.memory is not None:
+            # Keep swap from silently doubling the configured memory budget.
+            args.extend(["--memory", self.memory, "--memory-swap", self.memory])
+        if self.cpus is not None:
+            args.extend(["--cpus", format(Decimal(str(self.cpus)), "f")])
+        if self.bandwidth_mbps is not None:
+            rate = format(Decimal(str(self.bandwidth_mbps)), "f")
+            args.extend(["-e", f"NETEM_RATE={rate}mbit"])
+        return args
+
+
+@dataclass(frozen=True)
+class ContainerSettings:
+    h2load: ContainerLimits = field(default_factory=ContainerLimits)
+    http2: ContainerLimits = field(default_factory=ContainerLimits)
+    http3: ContainerLimits = field(default_factory=ContainerLimits)
+
+
+def parse_container_limits(values: dict) -> ContainerSettings:
+    if not isinstance(values, dict) or set(values) - {"h2load", "http2", "http3"}:
+        raise ValueError("env.yaml container_limits must map h2load, http2, and/or http3")
+    parsed = {}
+    for name, limits in values.items():
+        location = f"env.yaml container_limits.{name}"
+        if not isinstance(limits, dict) or set(limits) - {"memory", "cpus", "bandwidth_mbps"}:
+            raise ValueError(f"{location} accepts only memory, cpus, bandwidth_mbps")
+        memory = limits.get("memory")
+        if memory is not None:
+            match = re.fullmatch(r"([1-9][0-9]*)([bkmg]?)", memory.lower()) if isinstance(memory, str) else None
+            if not match or int(match[1]) * 1024 ** {"": 0, "b": 0, "k": 1, "m": 2, "g": 3}[match[2]] < 6 * 1024 ** 2:
+                raise ValueError(f"{location}.memory must be null or a Docker size string of at least 6 MiB, e.g. '512m'")
+            memory = memory.lower()
+        numbers = {}
+        for key in ("cpus", "bandwidth_mbps"):
+            value = limits.get(key)
+            if value is not None and (type(value) not in (int, float) or not math.isfinite(value) or value <= 0):
+                raise ValueError(f"{location}.{key} must be null or a finite positive number")
+            if key == "cpus" and value is not None and value < 0.01:
+                raise ValueError(f"{location}.cpus must be at least 0.01")
+            numbers[key] = value
+        parsed[name] = ContainerLimits(memory=memory, **numbers)
+    return ContainerSettings(**parsed)
 
 
 @dataclass(frozen=True)
@@ -59,6 +114,7 @@ class Environment:
     ip_address: str = ""
     ssh_port: int = 22
     archtype: str = "arm"
+    container_limits: ContainerSettings = field(default_factory=ContainerSettings)
     case_1_enabled: bool = True
     case_2_enabled: bool = False
     case_3_enabled: bool = False
@@ -92,7 +148,7 @@ def load_environment(path: Path | None = None) -> Environment:
         raise ValueError(f"Invalid YAML in {path}; check its syntax.") from None
     if not isinstance(values, dict) or type(values.get("remote")) is not bool:
         raise ValueError("env.yaml must contain remote: true or remote: false (without quotes)")
-    allowed = {"remote", "username", "password", "ip_address", "ssh_port", "archtype",
+    allowed = {"remote", "username", "password", "ip_address", "ssh_port", "archtype", "container_limits",
                "case_1_enabled", "case_2_enabled", "case_3_enabled", "case_4_enabled", *CASE_NAMES}
     if set(values) - allowed:
         raise ValueError("Unknown env.yaml field; see env.example.yaml for connection settings, case switches, and case parameter blocks")
@@ -110,6 +166,8 @@ def load_environment(path: Path | None = None) -> Environment:
     for name in CASE_NAMES:
         if name in values:
             values[name] = parse_case_parameters(name, values[name])
+    if "container_limits" in values:
+        values["container_limits"] = parse_container_limits(values["container_limits"])
     config = Environment(**values)
     if config.remote:
         if not config.username.strip():

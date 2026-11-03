@@ -1,0 +1,55 @@
+# Local h2load architecture: amd64 uses tvsjsdock/h2load-http3; arm builds the versioned image.
+archtype: arm
+# Set remote to true to run HTTPS/QUIC servers on this Linux machine.
+remote: false
+username: "dogukanhan"
+password: ""
+ip_address: "192.168.1.69"
+ssh_port: 22
+case_1_enabled: false
+case_2_enabled: false
+case_3_enabled: false
+case_4_enabled: true
+
+# Edit explicit values below. Every combination of the lists is executed.
+# Units: payloads in KB, delays in ms, packet_losses in percent.
+# Lists with one value keep that parameter fixed. No range syntax.
+case_1:
+  protocols: [h2, h3]
+  payloads: [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195, 200, 205, 210, 215, 220, 225, 230, 235, 240, 245, 250, 255, 256]
+  clients: [20]
+  delays: [0]
+  packet_losses: [0]
+  total_requests: 5000
+  max_streams: 10
+  iterations: 5
+
+case_2:
+  protocols: [h2, h3]
+  payloads: [20]
+  clients: [1]
+  delays: [0]
+  packet_losses: [0]
+  total_requests: 10000
+  max_streams: 10
+  iterations: 5
+
+case_3:
+  protocols: [h2, h3]
+  payloads: [20]
+  clients: [20]
+  delays: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+  packet_losses: [0]
+  total_requests: 5000
+  max_streams: 10
+  iterations: 5
+
+case_4:
+  protocols: [h2]
+  payloads: [20]
+  clients: [20]
+  delays: [0]
+  packet_losses: [2]
+  total_requests: 5000
+  max_streams: 10
+  iterations: 5

@@ -27,9 +27,9 @@ class Case3H2loadGraphTests(unittest.TestCase):
                 row = dict(test_id=f"run/case_3/{protocol}-20-5000-20-10-{delay}-0",
                            payload="20", protocol=protocol, total_requests="5000", clients="20",
                            max_stream="10", delay=str(delay), packet_loss="0", h2load_req_per_sec="99999")
-                for index, (_, _, mean, sd) in enumerate(METRICS, 1):
+                for index, (_, _, mean) in enumerate(METRICS, 1):
                     row[mean] = str(index * delay)
-                    row[sd] = "0.5"
+                    row[mean.replace("_mean", "_sd")] = "0.5"
                 rows.append(row)
         return rows
 
@@ -41,31 +41,30 @@ class Case3H2loadGraphTests(unittest.TestCase):
             writer.writerows(rows)
         return path
 
-    def test_four_panels_use_sorted_delays_correct_means_and_sd_bands(self):
+    def test_four_panels_use_sorted_delays_correct_means_without_sd_bands(self):
         key, group = next(iter(read_groups(self.write(self.rows())).items()))
         figure = create_figure(key, group)
         self.addCleanup(figure.clear)
         self.assertEqual(len(figure.axes), 4)
         for index, axis in enumerate(figure.axes, 1):
             self.assertEqual(len(axis.lines), 2)
-            self.assertEqual(len(axis.collections), 2)
+            self.assertEqual(len(axis.collections), 0)
             self.assertEqual([line.get_label() for line in axis.lines], ["h2", "h3"])
             self.assertEqual(list(axis.lines[0].get_xdata()), [1, 20, 100])
             self.assertEqual(list(axis.lines[0].get_ydata()), [index, index * 20, index * 100])
             self.assertEqual(axis.get_xlabel(), "Delay (ms)")
-            vertices = axis.collections[0].get_paths()[0].vertices
-            y_at_one = {y for x, y in vertices if x == 1}
-            self.assertEqual(y_at_one, {index - .5, index + .5})
         self.assertIn("req/s", figure.axes[0].get_ylabel())
         self.assertTrue(all("ms" in axis.get_ylabel() for axis in figure.axes[1:]))
 
     def test_missing_sd_keeps_mean_and_missing_mean_leaves_gap(self):
         rows = self.rows()
-        rows[0][METRICS[0][3]] = ""
+        for row in rows:
+            for field in list(row):
+                if "_sd" in field:
+                    del row[field]
         rows[1][METRICS[1][2]] = "NaN"
         key, group = next(iter(read_groups(self.write(rows)).items()))
         self.assertEqual(group["h2"][100][METRICS[0][2]], 100)
-        self.assertTrue(math.isnan(group["h2"][100][METRICS[0][3]]))
         figure = create_figure(key, group)
         self.addCleanup(figure.clear)
         self.assertTrue(math.isnan(figure.axes[1].lines[0].get_ydata()[0]))

@@ -6,6 +6,7 @@ import argparse
 import re
 import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import time
@@ -16,7 +17,8 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from test_executor.pre_build_containers import AMD64_H2LOAD_IMAGE, read_version, selected_h2load_image
+from test_executor.pre_build_containers import is_amd64_h2load_image, read_version, selected_h2load_image
+from test_executor.environment import Environment
 from test_executor.pre_init_test import get_run_directory, pre_init_test
 from test_executor.resource_capture import ResourceSampler
 from test_executor.server_host import LocalHost, get_active_environment, server_connection
@@ -42,10 +44,15 @@ def has_zero_requests(output: str) -> bool:
 
 def wait_for_server(port: int, host: str = "127.0.0.1") -> None:
     deadline = time.monotonic() + 10
+    # Docker can accept TCP connections before the HTTPS application is ready.
+    # Match h2load's acceptance of the benchmark's self-signed certificates.
+    context = ssl._create_unverified_context()
     while time.monotonic() < deadline:
         try:
-            with socket.create_connection((host, port), timeout=0.5):
-                return
+            with socket.create_connection((host, port), timeout=0.5) as connection:
+                connection.settimeout(1)
+                with context.wrap_socket(connection, server_hostname=host):
+                    return
         except OSError:
             time.sleep(0.2)
     raise RuntimeError(f"Timed out waiting for server at {host}:{port}")
@@ -79,17 +86,21 @@ def capture_h2load(command: list[str], output_file) -> None:
 def run_iteration(*, protocol: str, payload: int, total_request: int, client: int,
                   max_streams: int, delay: int, packet_loss: int,
                   server_image: str, h2load_image: str, output_file,
-                  request_log_path: Path, server_host=None) -> None:
+                  request_log_path: Path, server_host=None, config: Environment | None = None) -> None:
     server_host = LocalHost() if server_host is None else server_host
+    config = Environment() if config is None else config
+    client_limits = config.container_limits.h2load
+    server_limits = getattr(config.container_limits, "http2" if protocol == "h2" else "http3")
     _folder, _image, port, port_mapping = PROTOCOLS[protocol]
     suffix = uuid.uuid4().hex[:12]
     server_name, client_name = f"test-server-{suffix}", f"test-h2load-{suffix}"
     network = ["--cap-add", "NET_ADMIN", "-e", f"NETEM_DELAY={delay}ms",
                "-e", f"NETEM_LOSS={packet_loss}%"]
     try:
+        print(f"Container limits: h2load={client_limits}; {protocol}={server_limits}", flush=True)
         started = server_host.run(
             ["docker", "run", "--rm", "-d", "--name", server_name,
-             *network, "-p", port_mapping, server_image],
+             *network, *server_limits.docker_args(), "-p", port_mapping, server_image],
             check=True,
         )
         print(f"Started {server_image} on {server_host.address}: {started.stdout.strip()}", flush=True)
@@ -97,12 +108,26 @@ def run_iteration(*, protocol: str, payload: int, total_request: int, client: in
             wait_for_server(port, server_host.readiness_host)
         else:
             time.sleep(2)  # Match the existing runner's QUIC readiness delay.
+        # The registry image's entrypoint runs h2load itself; our ARM
+        # entrypoint applies netem and then executes the supplied command.
+        amd64_client = is_amd64_h2load_image(h2load_image)
+        client_command = [] if amd64_client else ["h2load"]
+        client_entrypoint = []
+        if amd64_client and client_limits.bandwidth_mbps is not None:
+            # Do not rely on the external image understanding NETEM_RATE.
+            # Run our netem wrapper and bypass its existing h2load entrypoint.
+            client_entrypoint = [
+                "--volume", f"{ROOT_DIR / 'h2load-native' / 'docker-entrypoint.sh'}:/benchmark-entrypoint.sh:ro",
+                "--entrypoint", "/bin/sh",
+            ]
+            client_command = ["/benchmark-entrypoint.sh", "h2load"]
         with ResourceSampler(server_name, request_log_path.parent / "resource.log", server_host=server_host):
             capture_h2load(
-                ["docker", "run", "--rm", "--name", client_name, *network,
-                 *(["--platform", "linux/amd64"] if h2load_image == AMD64_H2LOAD_IMAGE else []),
+                ["docker", "run", "--rm", "--name", client_name, *network, *client_limits.docker_args(),
+                 *(["--platform", "linux/amd64"] if amd64_client else []),
                  "--volume", f"{request_log_path.parent.resolve()}:/test-results",
-                 h2load_image, "h2load", f"-n{total_request}", f"-c{client}",
+                 *client_entrypoint,
+                 h2load_image, *client_command, f"-n{total_request}", f"-c{client}",
                  f"-m{max_streams}", "--npn-list", protocol,
                  f"--log-file=/test-results/{request_log_path.name}",
                  f"https://{server_host.request_host}:{port}/payloads/{payload}kb"],
@@ -198,6 +223,7 @@ def _execute_case(run_dir, server_host, folder_name, protocol, payload, total_re
                         h2load_image=h2load_image, output_file=output_file,
                         request_log_path=request_log_path,
                         server_host=server_host,
+                        config=get_active_environment(),
                     )
             except subprocess.CalledProcessError as exc:
                 # h2load may also exit nonzero when no requests were started.

@@ -25,12 +25,7 @@ COLUMNS = {
     "Req/s (Mean)": "h2load_req_per_sec_mean",
     "H2 Load Req/s": "h2load_req_per_sec",
 }
-STANDARD_DEVIATIONS = {
-    "h2load_time_for_request_mean_ms": "h2load_time_for_request_sd_ms",
-    "h2load_time_for_connect_mean_ms": "h2load_time_for_connect_sd_ms",
-    "h2load_time_to_1st_byte_mean_ms": "h2load_time_to_1st_byte_sd_ms",
-    "h2load_req_per_sec_mean": "h2load_req_per_sec_sd",
-}
+
 
 
 def three_decimals(value: str) -> str:
@@ -48,19 +43,15 @@ def format_value(row: dict, source: str) -> str:
     if not value or source in {"payload", "protocol"}:
         return value
     mean = three_decimals(value)
-    if source not in STANDARD_DEVIATIONS:
-        return mean
     suffix = " ms" if source.endswith("_ms") else ""
-    std = row[STANDARD_DEVIATIONS[source]]
-    return f"{mean}{suffix}" + (f" ± {three_decimals(std)}{suffix}" if std else "")
+    return f"{mean}{suffix}"
 
 
 def case_1_summary_table(run_dir: Path | None = None) -> Path:
     run_dir = case_directory(run_dir, "case_1")
     with (run_dir / "trimmed_mean.csv").open(encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file, delimiter=";")
-        required = {"test_id", *COLUMNS.values(),
-                    *STANDARD_DEVIATIONS.values()}
+        required = {"test_id", *COLUMNS.values()}
         missing = required - set(reader.fieldnames or [])
         if missing:
             raise ValueError(f"trimmed_mean.csv is missing columns: {', '.join(sorted(missing))}")

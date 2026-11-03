@@ -1,4 +1,4 @@
-"""Create one four-panel PNG comparing h2load means and SDs for h2 and h3."""
+"""Create one four-panel PNG comparing h2load means for h2 and h3."""
 
 from __future__ import annotations
 
@@ -18,10 +18,10 @@ from test_executor.case_1_resource_graph_creator import SETTINGS
 
 
 METRICS = (
-    ("Requests per second", "Mean rate per client (req/s)", "h2load_req_per_sec_mean", "h2load_req_per_sec_sd"),
-    ("Time to first byte", "Mean time (ms)", "h2load_time_to_1st_byte_mean_ms", "h2load_time_to_1st_byte_sd_ms"),
-    ("Connection time", "Mean time (ms)", "h2load_time_for_connect_mean_ms", "h2load_time_for_connect_sd_ms"),
-    ("Time for request", "Mean time (ms)", "h2load_time_for_request_mean_ms", "h2load_time_for_request_sd_ms"),
+    ("Requests per second", "Mean rate per client (req/s)", "h2load_req_per_sec_mean"),
+    ("Time to first byte", "Mean time (ms)", "h2load_time_to_1st_byte_mean_ms"),
+    ("Connection time", "Mean time (ms)", "h2load_time_for_connect_mean_ms"),
+    ("Time for request", "Mean time (ms)", "h2load_time_for_request_mean_ms"),
 )
 
 
@@ -94,17 +94,12 @@ def create_figure(key: tuple, group: dict, *, x_axis: str = "payload", average_g
     figure.text(.085, .905,
                 subtitle,
                 fontsize=11, color="#526176")
-    for axis, (title, ylabel, mean_field, sd_field) in zip(axes.flat, METRICS):
+    for axis, (title, ylabel, mean_field) in zip(axes.flat, METRICS):
         unavailable = []
         for protocol, label, color, marker, style, data in series:
             means = [data[protocol].get(x, {}).get(mean_field, math.nan) for x in x_values]
-            sds = [data[protocol].get(x, {}).get(sd_field, math.nan) for x in x_values]
             if not any(math.isfinite(value) for value in means):
                 unavailable.append(label)
-            lower = [max(0, mean - sd) if math.isfinite(mean) and math.isfinite(sd) else math.nan
-                     for mean, sd in zip(means, sds)]
-            upper = [mean + sd for mean, sd in zip(means, sds)]
-            axis.fill_between(x_values, lower, upper, color=color, alpha=.08 if comparison else .15, linewidth=0)
             axis.plot(x_values, means, label=label, color=color, marker=marker,
                       linestyle=style, linewidth=2, markersize=5, markevery=max(1, len(x_values) // 24),
                       markeredgecolor="white", markeredgewidth=.7)
@@ -131,11 +126,11 @@ def create_figure(key: tuple, group: dict, *, x_axis: str = "payload", average_g
     handles, labels = axes[0, 0].get_legend_handles_labels()
     figure.legend(handles, labels, frameon=False, ncol=4 if comparison else 2, fontsize=10 if comparison else 12,
                   loc="upper right", bbox_to_anchor=(.975, .885))
-    caption = ("Lines: trimmed means and all-iteration averages. Shading: mean ± averaged h2load SD (clipped at zero)."
-               if comparison else "Lines: trimmed means. Shading: mean ± averaged h2load standard deviation (lower bounds clipped at zero).")
+    caption = ("Lines: trimmed means and all-iteration averages."
+               if comparison else "Lines: trimmed means.")
     figure.text(.085, .075, caption,
                 fontsize=9, color="#526176")
-    figure.text(.085, .045, "SDs describe h2load's within-iteration statistics, not variability between iteration means. Missing data is left as gaps.",
+    figure.text(.085, .045, "Missing data is left as gaps.",
                 fontsize=8.5, color="#65748A")
     return figure
 

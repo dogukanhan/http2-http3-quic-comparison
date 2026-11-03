@@ -21,10 +21,17 @@ from test_executor.environment import Environment, load_environment
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 AMD64_H2LOAD_IMAGE = "tvsjsdock/h2load-http3:latest"
+AMD64_NETEM_REPOSITORY = "h2load-http3-amd64-netem"
+
+
+def is_amd64_h2load_image(image: str) -> bool:
+    return image == AMD64_H2LOAD_IMAGE or image.startswith(f"{AMD64_NETEM_REPOSITORY}:")
 
 
 def selected_h2load_image(config: Environment) -> str:
     if config.archtype == "amd64":
+        if config.container_limits.h2load.bandwidth_mbps is not None:
+            return f"{AMD64_NETEM_REPOSITORY}:{read_version(ROOT_DIR / 'h2load-amd64')}"
         return AMD64_H2LOAD_IMAGE
     if config.archtype == "arm":
         return f"h2load-http3-arm64:{read_version(ROOT_DIR / 'h2load-native')}"
@@ -120,6 +127,12 @@ def prepare_images(server, config: Environment) -> None:
     if config.archtype == "amd64":
         if image_exists(client_image):
             print(f"Using existing local h2load image: {client_image}", flush=True)
+        elif client_image != AMD64_H2LOAD_IMAGE:
+            print(f"Adding traffic control to the AMD64 h2load image: {client_image}", flush=True)
+            context = ROOT_DIR / "h2load-amd64"
+            run_build(["docker", "buildx", "build", "--platform", "linux/amd64", "--load",
+                       "--progress=plain", "-f", str(context / "Dockerfile"),
+                       "-t", client_image, str(context)])
         else:
             print(f"Pulling h2load image: {client_image}", flush=True)
             run_build(["docker", "pull", "--platform", "linux/amd64", client_image])

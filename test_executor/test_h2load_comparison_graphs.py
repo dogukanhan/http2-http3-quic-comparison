@@ -27,8 +27,9 @@ class ComparisonGraphTests(unittest.TestCase):
                                            total_requests=5000, payload=20, clients=20, max_stream=10,
                                            delay=10, packet_loss=0, h2load_req_per_sec=999999)
                                 row[x_axis or "packet_loss"] = point
-                                for _title, _ylabel, mean, sd in METRICS:
-                                    row[mean], row[sd] = base + offset + point, 1
+                                for _title, _ylabel, mean in METRICS:
+                                    row[mean] = base + offset + point
+                                    row[mean.replace("_mean", "_sd")] = 1
                                 rows.append(row)
                         with (directory / filename).open("w", newline="") as file:
                             writer = csv.DictWriter(file, fieldnames=list(rows[0]), delimiter=";")
@@ -47,6 +48,8 @@ class ComparisonGraphTests(unittest.TestCase):
                             self.assertEqual(axis.get_xlabel(), old_axis.get_xlabel())
                             self.assertEqual(axis.get_ylabel(), old_axis.get_ylabel())
                             self.assertEqual(axis.get_title(loc="left"), old_axis.get_title(loc="left"))
+                            self.assertEqual(len(axis.collections), 0)
+                            self.assertNotIn("±", " ".join(text.get_text() for text in figure.texts))
                             series = axis.containers if x_axis is None else axis.lines
                             self.assertEqual([item.get_label() for item in series],
                                              ["h2 trimmed", "h3 trimmed", "h2 average", "h3 average"])
